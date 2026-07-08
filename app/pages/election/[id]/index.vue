@@ -27,12 +27,20 @@
         :to="`/election/${route.params.id}/return`"
       />
       <UButton
-        v-if="election?.type === 'congressional' && election.canSetTotalVotes && election.canEdit"
+        v-if="election?.type === 'congressional' && election.canSetTotalVotes && election.canEdit && !election.totalVotes"
         icon="i-lucide-user-plus"
         label="Add Candidate"
         color="neutral"
         variant="soft"
         :to="`/election/${route.params.id}/candidate`"
+      />
+      <UButton
+        v-if="election?.type === 'congressional' && election.canSetTotalVotes && election.canEdit && !election.totalVotes"
+        icon="i-lucide-list-plus"
+        label="Bulk Enter"
+        color="neutral"
+        variant="soft"
+        :to="{ path: `/election/${route.params.id}/candidate`, query: { mode: 'bulk' } }"
       />
     </div>
 
