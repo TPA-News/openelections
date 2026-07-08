@@ -1,6 +1,5 @@
 <template>
   <UContainer class="my-6 space-y-6">
-    <!-- Header -->
     <div class="flex items-center justify-between gap-4">
       <div>
         <h1 class="text-2xl font-medium">
@@ -13,54 +12,58 @@
       <DashboardCreateDialog @close="onDialogClose" />
     </div>
 
-    <!-- Filter tabs -->
-    <div class="flex gap-2">
+    <div class="flex flex-wrap gap-2">
       <UButton
         v-for="tab in tabs"
         :key="tab.value"
+        :label="tab.label"
+        size="sm"
         :variant="activeTab === tab.value ? 'solid' : 'ghost'"
         :color="activeTab === tab.value ? 'primary' : 'neutral'"
-        size="sm"
-        :label="tab.label"
         @click="activeTab = tab.value"
       />
     </div>
 
-    <!-- Loading skeletons -->
+    <UAlert
+      v-if="error"
+      color="error"
+      icon="i-lucide-circle-alert"
+      title="Failed to load dashboard"
+      :description="String(error.statusMessage || error.message || 'Unknown error')"
+    />
+
     <div
-      v-if="pending"
+      v-else-if="pending"
       class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"
     >
       <UCard
-        v-for="n in 3"
+        v-for="n in 6"
         :key="n"
       >
         <div class="space-y-3 animate-pulse">
-          <div class="h-4 bg-elevated-2/3" />
-          <div class="h-3 bg-elevated rounded w-1/3" />
-          <div class="h-3 bg-elevated-1/2" />
+          <div class="h-4 bg-elevated rounded" />
+          <div class="h-4 w-1/2 bg-elevated/70 rounded" />
+          <div class="h-4 w-2/3 bg-elevated/50 rounded" />
         </div>
       </UCard>
     </div>
 
-    <!-- Empty state -->
     <div
       v-else-if="!filteredElections.length"
-      class="flex flex-col items-center justify-center py-24 text-center"
+      class="py-20 text-center"
     >
       <UIcon
         name="i-lucide-clipboard-list"
-        class="w-10 h-10 text-muted mb-3"
+        class="w-10 h-10 mx-auto text-muted mb-3"
       />
       <p class="font-medium">
         No elections found
       </p>
       <p class="text-sm text-muted mt-1">
-        {{ activeTab === 'all' ? 'Create your first election to get started.' : `No ${activeTab} elections.` }}
+        Create an election to get started.
       </p>
     </div>
 
-    <!-- Election grid -->
     <div
       v-else
       class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"
@@ -69,58 +72,49 @@
         v-for="election in filteredElections"
         :key="election.id"
         :to="`/election/${election.id}`"
-        class="group block"
+        class="block"
       >
         <UCard variant="soft">
-          <div class="flex-1 p-2 space-y-3">
-            <!-- Title + status -->
+          <div class="space-y-3">
             <div class="flex items-start justify-between gap-2">
               <h2 class="font-semibold leading-snug line-clamp-2">
-                {{ election.title }}
+                {{ election.name }}
               </h2>
               <UBadge
-                :color="election.status === 'ongoing' ? 'success' : 'neutral'"
+                :label="statusLabel(election.status)"
+                :color="statusColor(election.status)"
                 variant="subtle"
                 size="xs"
-                :label="election.status === 'ongoing' ? 'Ongoing' : 'Closed'"
-                class="shrink-0"
               />
             </div>
 
-            <!-- Mode badge -->
-            <UBadge
-              :color="modeColor(election.mode)"
-              variant="soft"
-              size="xs"
-              :label="modeLabel(election.mode)"
-            />
+            <div class="text-sm text-muted capitalize">
+              {{ election.type }}
+            </div>
 
-            <!-- Stats -->
             <div class="flex items-center gap-4 text-sm text-muted">
               <span class="flex items-center gap-1">
                 <UIcon
                   name="i-lucide-users"
                   class="w-4 h-4"
                 />
-                {{ election.candidateCount ?? 0 }}
-                {{ election.mode === 'parliamentary' ? 'parties' : 'candidates' }}
+                {{ election.candidateCount }} candidates
               </span>
               <span class="flex items-center gap-1">
                 <UIcon
-                  name="i-lucide-bar-chart-2"
+                  name="i-lucide-bar-chart-3"
                   class="w-4 h-4"
                 />
-                {{ formatVotes(election.totalVotes) }} votes
+                {{ formatVotes(election.totalVotes) }} total
               </span>
             </div>
 
-            <!-- Congressional votes counted -->
-            <div
-              v-if="election.mode === 'congressional' && election.votesCounted !== undefined"
+            <p
+              v-if="election.type === 'congressional'"
               class="text-xs text-muted"
             >
-              {{ formatVotes(election.votesCounted) }} of {{ formatVotes(election.totalVotes) }} counted
-            </div>
+              {{ formatVotes(election.votesCounted) }} counted
+            </p>
 
             <p class="text-xs text-muted">
               Created {{ formatDate(election.createdAt) }}
@@ -133,54 +127,62 @@
 </template>
 
 <script setup lang="ts">
-type Mode = 'presidential' | 'congressional' | 'parliamentary'
+type ElectionStatus = 'open' | 'closed' | 'paused'
 
-const activeTab = ref<'all' | 'ongoing' | 'closed'>('all')
+type ElectionListItem = {
+  id: number
+  name: string
+  type: 'presidential' | 'congressional' | 'parliamentary'
+  status: ElectionStatus
+  totalVotes: number | null
+  votesCounted: number
+  candidateCount: number
+  createdAt: string
+}
 
 const tabs = [
   { label: 'All', value: 'all' },
-  { label: 'Ongoing', value: 'ongoing' },
+  { label: 'Open', value: 'open' },
+  { label: 'Paused', value: 'paused' },
   { label: 'Closed', value: 'closed' }
 ] as const
 
-const { data: elections, pending, refresh } = await useFetch('/api/elections')
+const activeTab = ref<'all' | ElectionStatus>('all')
+
+const { data: elections, pending, error, refresh } = await useFetch<ElectionListItem[]>('/api/elections')
 
 const filteredElections = computed(() => {
   const list = elections.value ?? []
   if (activeTab.value === 'all') return list
-  return list.filter(e => e.status === activeTab.value)
+  return list.filter(election => election.status === activeTab.value)
 })
 
 function onDialogClose(created: boolean) {
   if (created) refresh()
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-function modeLabel(mode: Mode) {
-  const map: Record<Mode, string> = {
-    presidential: 'Presidential',
-    congressional: 'Congressional',
-    parliamentary: 'Parliamentary'
-  }
-  return map[mode]
+function statusColor(status: ElectionStatus): 'success' | 'warning' | 'neutral' {
+  if (status === 'open') return 'success'
+  if (status === 'paused') return 'warning'
+  return 'neutral'
 }
 
-function modeColor(mode: Mode): 'info' | 'warning' | 'success' {
-  const map: Record<Mode, 'info' | 'warning' | 'success'> = {
-    presidential: 'info',
-    congressional: 'warning',
-    parliamentary: 'success'
-  }
-  return map[mode]
+function statusLabel(status: ElectionStatus) {
+  if (status === 'open') return 'Open'
+  if (status === 'paused') return 'Paused'
+  return 'Closed'
 }
 
-function formatVotes(n?: number) {
-  if (!n) return '0'
-  return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n)
+function formatVotes(value: number | null) {
+  if (value === null) return 'Not set'
+  return value.toLocaleString('en-US')
 }
 
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+function formatDate(value: string) {
+  return new Date(value).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric'
+  })
 }
 </script>

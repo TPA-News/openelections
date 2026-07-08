@@ -1,6 +1,10 @@
 // https://nuxt.com/docs/api/configuration/nuxt-config
 export default defineNuxtConfig({
-  modules: ['@nuxt/eslint', '@nuxt/ui', '@nuxthub/core'],
+  modules: [
+    '@nuxt/eslint',
+    '@nuxt/ui',
+    'nuxt-auth-utils'
+  ],
 
   devtools: {
     enabled: true
@@ -13,13 +17,6 @@ export default defineNuxtConfig({
   },
 
   compatibilityDate: '2025-01-15',
-
-  hub: {
-    db: {
-      dialect: 'mysql'
-    }
-  },
-
   vite: {
     optimizeDeps: {
       include: [

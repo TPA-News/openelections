@@ -1,113 +1,57 @@
-import { sql, inArray } from 'drizzle-orm'
-import { db, schema } from '@nuxthub/db'
+import { sql, inArray, desc } from 'drizzle-orm'
+import { elections, electionReturns, congressionalCandidates } from '~~/server/db/schema'
+import { db as database } from '../db'
 
 export default defineEventHandler(async () => {
-  const allElections = await db
+  const list = await database
     .select()
-    .from(schema.elections)
-    .orderBy(schema.elections.createdAt)
+    .from(elections)
+    .orderBy(desc(elections.createdAt))
 
-  if (!allElections.length) return []
+  if (!list.length) return []
 
-  const ids = allElections.map(e => e.id)
+  const ids = list.map((election) => election.id)
 
-  // ── Presidential ───────────────────────────────────────────────────────────
-
-  const presidentialTotals = await db
+  const allReturns = await database
     .select({
-      electionId: schema.presidentialResults.electionId,
-      totalVotes: schema.presidentialResults.totalVotes
+      electionId: electionReturns.electionId,
+      votesCounted: electionReturns.votesCounted,
+      reportedAt: electionReturns.reportedAt
     })
-    .from(schema.presidentialResults)
-    .where(inArray(schema.presidentialResults.electionId, ids))
+    .from(electionReturns)
+    .where(inArray(electionReturns.electionId, ids))
+    .orderBy(desc(electionReturns.reportedAt))
 
-  const presidentialCandidateCounts = await db
+  const candidateCounts = await database
     .select({
-      electionId: schema.presidentialCandidates.electionId,
-      count: sql<number>`COUNT(*)`.as('count')
+      electionId: congressionalCandidates.electionId,
+      count: sql<number>`count(*)`.as('count')
     })
-    .from(schema.presidentialCandidates)
-    .where(inArray(schema.presidentialCandidates.electionId, ids))
-    .groupBy(schema.presidentialCandidates.electionId)
+    .from(congressionalCandidates)
+    .where(inArray(congressionalCandidates.electionId, ids))
+    .groupBy(congressionalCandidates.electionId)
 
-  // ── Congressional ──────────────────────────────────────────────────────────
-
-  const congressionalTotals = await db
-    .select({
-      electionId: schema.congressionalResults.electionId,
-      totalVotes: schema.congressionalResults.totalVotes,
-      votesCounted: schema.congressionalResults.votesCounted
-    })
-    .from(schema.congressionalResults)
-    .where(inArray(schema.congressionalResults.electionId, ids))
-
-  const congressionalCandidateCounts = await db
-    .select({
-      electionId: schema.congressionalCandidates.electionId,
-      count: sql<number>`COUNT(*)`.as('count')
-    })
-    .from(schema.congressionalCandidates)
-    .where(inArray(schema.congressionalCandidates.electionId, ids))
-    .groupBy(schema.congressionalCandidates.electionId)
-
-  // ── Parliamentary ──────────────────────────────────────────────────────────
-
-  const parliamentaryTotals = await db
-    .select({
-      electionId: schema.parliamentaryResults.electionId,
-      totalVotes: schema.parliamentaryResults.totalVotes
-    })
-    .from(schema.parliamentaryResults)
-    .where(inArray(schema.parliamentaryResults.electionId, ids))
-
-  const parliamentaryPartyCounts = await db
-    .select({
-      electionId: schema.parliamentaryPartyVotes.electionId,
-      count: sql<number>`COUNT(*)`.as('count')
-    })
-    .from(schema.parliamentaryPartyVotes)
-    .where(inArray(schema.parliamentaryPartyVotes.electionId, ids))
-    .groupBy(schema.parliamentaryPartyVotes.electionId)
-
-  // ── Index maps ─────────────────────────────────────────────────────────────
-
-  const presTotal = Object.fromEntries(presidentialTotals.map(r => [r.electionId, r.totalVotes]))
-  const presCount = Object.fromEntries(presidentialCandidateCounts.map(r => [r.electionId, r.count]))
-  const congTotal = Object.fromEntries(congressionalTotals.map(r => [r.electionId, r]))
-  const congCount = Object.fromEntries(congressionalCandidateCounts.map(r => [r.electionId, r.count]))
-  const parlTotal = Object.fromEntries(parliamentaryTotals.map(r => [r.electionId, r.totalVotes]))
-  const parlCount = Object.fromEntries(parliamentaryPartyCounts.map(r => [r.electionId, r.count]))
-
-  // ── Assemble ───────────────────────────────────────────────────────────────
-
-  return allElections.map((election) => {
-    const id = election.id
-    let totalVotes = 0
-    let votesCounted: number | undefined
-    let candidateCount = 0
-
-    if (election.mode === 'presidential') {
-      totalVotes = presTotal[id] ?? 0
-      candidateCount = presCount[id] ?? 0
-    } else if (election.mode === 'congressional') {
-      totalVotes = congTotal[id]?.totalVotes ?? 0
-      votesCounted = congTotal[id]?.votesCounted ?? 0
-      candidateCount = congCount[id] ?? 0
-    } else if (election.mode === 'parliamentary') {
-      totalVotes = parlTotal[id] ?? 0
-      candidateCount = parlCount[id] ?? 0
+  const latestReturnByElectionId: Record<number, { votesCounted: number }> = {}
+  for (const row of allReturns) {
+    if (!latestReturnByElectionId[row.electionId]) {
+      latestReturnByElectionId[row.electionId] = { votesCounted: row.votesCounted }
     }
+  }
 
-    return {
-      id: election.id,
-      title: election.title,
-      mode: election.mode,
-      status: election.status,
-      totalVotes,
-      ...(votesCounted !== undefined && { votesCounted }),
-      candidateCount,
-      createdAt: election.createdAt,
-      updatedAt: election.updatedAt
-    }
-  })
+  const candidateCountByElectionId = Object.fromEntries(
+    candidateCounts.map((row) => [row.electionId, row.count])
+  )
+
+  return list.map((election) => ({
+    id: election.id,
+    name: election.name,
+    title: election.name,
+    type: election.type,
+    mode: election.type,
+    status: election.status,
+    totalVotes: election.totalVotes,
+    votesCounted: latestReturnByElectionId[election.id]?.votesCounted ?? 0,
+    candidateCount: candidateCountByElectionId[election.id] ?? 0,
+    createdAt: election.createdAt
+  }))
 })

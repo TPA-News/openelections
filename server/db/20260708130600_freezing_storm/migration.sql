@@ -1,0 +1,1 @@
+ALTER TABLE `election` ADD `totalVotes` int;
