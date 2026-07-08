@@ -1,12 +1,7 @@
 import { eq } from 'drizzle-orm'
-import { z } from 'zod'
 import { db } from '../../db'
 import { elections } from '~~/server/db/schema'
-import { assertCanMutateElections, assertElectionWritableByCreator, requireExistingAccount } from '~~/server/utils/auth'
-
-const bodySchema = z.object({
-  status: z.enum(['open', 'closed', 'paused'])
-})
+import { assertCanMutateElections, requireExistingAccount } from '~~/server/utils/auth'
 
 export default defineEventHandler(async (event) => {
   const idParam = getRouterParam(event, 'id')
@@ -16,7 +11,8 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Invalid election id' })
   }
 
-  const body = await readValidatedBody(event, bodySchema.parse)
+  const account = await requireExistingAccount(event)
+  assertCanMutateElections(account)
 
   const electionRows = await db
     .select()
@@ -30,19 +26,23 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 404, statusMessage: 'Election not found' })
   }
 
-  const account = await requireExistingAccount(event)
-  assertCanMutateElections(account)
-  assertElectionWritableByCreator(election, account.discordId)
+  if (election.createdByDiscordId && election.createdByDiscordId !== account.discordId) {
+    throw createError({
+      statusCode: 403,
+      statusMessage: 'Election already linked to another creator account'
+    })
+  }
 
-  if (election.status !== body.status) {
+  if (!election.createdByDiscordId) {
     await db
       .update(elections)
-      .set({ status: body.status })
+      .set({ createdByDiscordId: account.discordId })
       .where(eq(elections.id, electionId))
   }
 
   return {
     id: electionId,
-    status: body.status
+    createdByDiscordId: account.discordId,
+    canEdit: true
   }
 })

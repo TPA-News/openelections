@@ -9,8 +9,20 @@
           See all current and past elections.
         </p>
       </div>
-      <DashboardCreateDialog @close="onDialogClose" />
+      <DashboardCreateDialog
+        v-if="canCreateElection"
+        @close="onDialogClose"
+      />
     </div>
+
+    <UAlert
+      v-if="accountInfo?.account.role === 'viewer'"
+      color="neutral"
+      variant="subtle"
+      icon="i-lucide-eye"
+      title="Viewer account"
+      description="Viewer accounts can only view elections and returns."
+    />
 
     <div class="flex flex-wrap gap-2">
       <UButton
@@ -20,7 +32,7 @@
         size="sm"
         :variant="activeTab === tab.value ? 'solid' : 'ghost'"
         :color="activeTab === tab.value ? 'primary' : 'neutral'"
-        @click="activeTab = tab.value"
+        @click="selectTab(tab.value)"
       />
     </div>
 
@@ -149,7 +161,14 @@ const tabs = [
 
 const activeTab = ref<'all' | ElectionStatus>('all')
 
+const { data: accountInfo } = await useFetch<{ account: { role: 'admin' | 'pollbody' | 'viewer' } }>('/api/account/me')
 const { data: elections, pending, error, refresh } = await useFetch<ElectionListItem[]>('/api/elections')
+
+const canCreateElection = computed(() => accountInfo.value?.account.role !== 'viewer')
+
+function selectTab(value: 'all' | ElectionStatus) {
+  activeTab.value = value
+}
 
 const filteredElections = computed(() => {
   const list = elections.value ?? []

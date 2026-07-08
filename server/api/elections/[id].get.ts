@@ -8,6 +8,7 @@ import {
 	electionReturnCandidateStatuses
 } from '~~/server/db/schema'
 import { db as database } from '../db'
+import { requireExistingAccount } from '~~/server/utils/auth'
 
 export default defineEventHandler(async (event) => {
 	const idParam = getRouterParam(event, 'id')
@@ -61,9 +62,16 @@ export default defineEventHandler(async (event) => {
 			.where(eq(electionReturnCandidateStatuses.returnId, latestReturn.id))
 		: []
 
-	const statusByCandidateId = Object.fromEntries(
-		returnCandidateStatuses.map((row) => [row.candidateId, row.status])
-	)
+	let accountDiscordId: string | null = null
+	let accountRole: 'admin' | 'pollbody' | 'viewer' | null = null
+	try {
+		const account = await requireExistingAccount(event)
+		accountDiscordId = account.discordId
+		accountRole = account.role
+	} catch {
+		accountDiscordId = null
+		accountRole = null
+	}
 
 	const categoryById = Object.fromEntries(
 		categories.map((category) => [category.id, category])
@@ -75,13 +83,21 @@ export default defineEventHandler(async (event) => {
 		type: election.type,
 		status: election.status,
 		totalVotes: election.totalVotes,
+		createdByDiscordId: election.createdByDiscordId,
+		isReadOnly: election.createdByDiscordId === null,
+		canEdit: !!accountDiscordId && accountRole !== 'viewer' && election.createdByDiscordId !== null,
+		canClaim: !!accountDiscordId && accountRole !== 'viewer' && election.createdByDiscordId === null,
 		createdAt: election.createdAt,
 		canSetTotalVotes: election.totalVotes === null,
 		return: latestReturn
 			? {
 				id: latestReturn.id,
 				votesCounted: latestReturn.votesCounted,
-				reportedAt: latestReturn.reportedAt
+				reportedAt: latestReturn.reportedAt,
+				candidateStatuses: returnCandidateStatuses.map((row) => ({
+					candidateId: row.candidateId,
+					status: row.status
+				}))
 			}
 			: null,
 		categories: categories.map((category) => ({
@@ -93,8 +109,7 @@ export default defineEventHandler(async (event) => {
 			name: candidate.name,
 			party: candidate.party,
 			categoryId: candidate.categoryId,
-			categoryName: categoryById[candidate.categoryId]?.name ?? 'Uncategorized',
-			status: statusByCandidateId[candidate.id] ?? 'undecided'
+			categoryName: categoryById[candidate.categoryId]?.name ?? 'Uncategorized'
 		}))
 	}
 })

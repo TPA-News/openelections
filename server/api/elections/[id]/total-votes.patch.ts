@@ -2,6 +2,7 @@ import { eq } from 'drizzle-orm'
 import { z } from 'zod'
 import { db } from '../../db'
 import { elections } from '~~/server/db/schema'
+import { assertCanMutateElections, assertElectionWritableByCreator, requireExistingAccount } from '~~/server/utils/auth'
 
 const bodySchema = z.object({
   totalVotes: z.coerce.number().int().min(0)
@@ -28,6 +29,10 @@ export default defineEventHandler(async (event) => {
   if (!election) {
     throw createError({ statusCode: 404, statusMessage: 'Election not found' })
   }
+
+  const account = await requireExistingAccount(event)
+  assertCanMutateElections(account)
+  assertElectionWritableByCreator(election, account.discordId)
 
   if (election.totalVotes !== null) {
     throw createError({

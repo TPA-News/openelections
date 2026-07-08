@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm'
+import { desc, eq } from 'drizzle-orm'
 import { z } from 'zod'
 import { db } from '../../db'
 import {
@@ -7,6 +7,7 @@ import {
   congressionalCandidates,
   electionReturnCandidateStatuses
 } from '~~/server/db/schema'
+import { assertCanMutateElections, assertElectionWritableByCreator, requireExistingAccount } from '~~/server/utils/auth'
 
 const bodySchema = z.object({
   votesCounted: z.coerce.number().int().min(0),
@@ -38,6 +39,10 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 404, statusMessage: 'Election not found' })
   }
 
+  const account = await requireExistingAccount(event)
+  assertCanMutateElections(account)
+  assertElectionWritableByCreator(election, account.discordId)
+
   if (election.totalVotes === null) {
     throw createError({
       statusCode: 409,
@@ -49,6 +54,24 @@ export default defineEventHandler(async (event) => {
     throw createError({
       statusCode: 400,
       statusMessage: 'Votes counted cannot exceed total votes'
+    })
+  }
+
+  const latestReturnRows = await db
+    .select({
+      votesCounted: electionReturns.votesCounted
+    })
+    .from(electionReturns)
+    .where(eq(electionReturns.electionId, electionId))
+    .orderBy(desc(electionReturns.reportedAt), desc(electionReturns.id))
+    .limit(1)
+
+  const minimumVotesCounted = latestReturnRows[0]?.votesCounted ?? 0
+
+  if (body.votesCounted < minimumVotesCounted) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: `Votes counted cannot be lower than the latest reported count (${minimumVotesCounted})`
     })
   }
 
@@ -99,6 +122,7 @@ export default defineEventHandler(async (event) => {
     id: newReturn?.id,
     electionId,
     votesCounted: body.votesCounted,
-    totalVotes: election.totalVotes
+    totalVotes: election.totalVotes,
+    minimumVotesCounted
   }
 })

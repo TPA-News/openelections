@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm'
 import { db } from '../db'
 import { elections } from '~~/server/db/schema'
+import { assertCanMutateElections, assertElectionWritableByCreator, requireExistingAccount } from '~~/server/utils/auth'
 
 export default defineEventHandler(async (event) => {
   const idParam = getRouterParam(event, 'id')
@@ -21,6 +22,10 @@ export default defineEventHandler(async (event) => {
   if (!election) {
     throw createError({ statusCode: 404, statusMessage: 'Election not found' })
   }
+
+  const account = await requireExistingAccount(event)
+  assertCanMutateElections(account)
+  assertElectionWritableByCreator(election, account.discordId)
 
   await db
     .delete(elections)

@@ -2,6 +2,7 @@ import { eq } from 'drizzle-orm'
 import { z } from 'zod'
 import { db } from '../../db'
 import { elections, congressionalCandidates, congressionalCategories } from '~~/server/db/schema'
+import { assertCanMutateElections, assertElectionWritableByCreator, requireExistingAccount } from '~~/server/utils/auth'
 
 const chamberSchema = z.enum(['senate', 'representative'])
 
@@ -32,6 +33,10 @@ export default defineEventHandler(async (event) => {
   if (!election) {
     throw createError({ statusCode: 404, statusMessage: 'Election not found' })
   }
+
+  const account = await requireExistingAccount(event)
+  assertCanMutateElections(account)
+  assertElectionWritableByCreator(election, account.discordId)
 
   if (election.type !== 'congressional') {
     throw createError({

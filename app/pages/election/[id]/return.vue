@@ -17,7 +17,16 @@
         @submit="onSubmit"
       >
         <UAlert
-          v-if="election?.canSetTotalVotes"
+          v-if="election && !election.canEdit"
+          color="warning"
+          variant="subtle"
+          icon="i-lucide-lock"
+          title="Read-only election"
+          description="Your account role does not allow submitting returns."
+        />
+
+        <UAlert
+          v-else-if="election?.canSetTotalVotes"
           color="warning"
           variant="subtle"
           icon="i-lucide-circle-alert"
@@ -40,9 +49,13 @@
           <UInput
             v-model.number="state.votesCounted"
             type="number"
-            min="0"
+            :min="minimumVotesCounted"
             placeholder="0"
+            :disabled="!election?.canEdit"
           />
+          <p class="text-xs text-muted mt-1">
+            Minimum allowed is {{ formatNumber(minimumVotesCounted) }} (latest reported count).
+          </p>
         </UFormField>
 
         <UCard
@@ -98,6 +111,7 @@
                   <USelect
                     v-model="candidateStatuses[candidate.id]"
                     :items="statusItems"
+                    :disabled="!election?.canEdit"
                   />
                 </div>
               </div>
@@ -131,6 +145,7 @@
                   <USelect
                     v-model="candidateStatuses[candidate.id]"
                     :items="statusItems"
+                    :disabled="!election?.canEdit"
                   />
                 </div>
               </div>
@@ -146,6 +161,7 @@
             :to="`/election/${route.params.id}`"
           />
           <UButton
+            v-if="election?.canEdit"
             type="submit"
             :loading="submitting"
             :disabled="Boolean(election?.canSetTotalVotes)"
@@ -167,13 +183,20 @@ type CandidateStatus = 'in' | 'out' | 'undecided'
 type ElectionDetail = {
   type: 'presidential' | 'congressional' | 'parliamentary'
   totalVotes: number | null
+  canEdit: boolean
   canSetTotalVotes: boolean
+  return: null | {
+    votesCounted: number
+    candidateStatuses: Array<{
+      candidateId: number
+      status: CandidateStatus
+    }>
+  }
   candidates: Array<{
     id: number
     name: string
     party: string
     categoryName: string
-    status: CandidateStatus
   }>
 }
 
@@ -190,8 +213,10 @@ const schema = z.object({
 type Schema = z.output<typeof schema>
 
 const state = reactive<Partial<Schema>>({
-  votesCounted: 0
+  votesCounted: undefined
 })
+
+const minimumVotesCounted = computed(() => election.value?.return?.votesCounted ?? 0)
 
 const candidateTab = ref<'senate' | 'representative'>('senate')
 
@@ -214,14 +239,23 @@ const representativeCandidates = computed(() => {
   return (election.value?.candidates ?? []).filter(candidate => normalizeCategory(candidate.categoryName) === 'representative')
 })
 
+const latestStatusByCandidateId = computed(() => {
+  const rows = election.value?.return?.candidateStatuses ?? []
+  return Object.fromEntries(rows.map((row) => [row.candidateId, row.status])) as Record<number, CandidateStatus>
+})
+
 const candidateStatuses = reactive<Record<number, CandidateStatus>>({})
 
 watchEffect(() => {
   const list = election.value?.candidates ?? []
   for (const candidate of list) {
     if (!candidateStatuses[candidate.id]) {
-      candidateStatuses[candidate.id] = candidate.status
+      candidateStatuses[candidate.id] = latestStatusByCandidateId.value[candidate.id] ?? 'undecided'
     }
+  }
+
+  if (state.votesCounted === undefined || state.votesCounted === null) {
+    state.votesCounted = minimumVotesCounted.value
   }
 })
 
@@ -230,6 +264,26 @@ async function onSubmit(event: FormSubmitEvent<Schema>) {
     toast.add({
       title: 'Set total votes first',
       description: 'Set total votes from the election overview before creating a return.',
+      color: 'warning',
+      icon: 'i-lucide-circle-alert'
+    })
+    return
+  }
+
+  if (election.value && !election.value.canEdit) {
+    toast.add({
+      title: 'Read-only election',
+      description: 'Only the linked election creator account can submit returns.',
+      color: 'warning',
+      icon: 'i-lucide-circle-alert'
+    })
+    return
+  }
+
+  if (event.data.votesCounted < minimumVotesCounted.value) {
+    toast.add({
+      title: 'Votes counted too low',
+      description: `Votes counted cannot be lower than ${formatNumber(minimumVotesCounted.value)}.`,
       color: 'warning',
       icon: 'i-lucide-circle-alert'
     })

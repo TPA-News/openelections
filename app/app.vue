@@ -1,4 +1,11 @@
 <script setup>
+const { loggedIn, user, clear } = useUserSession()
+
+async function logout() {
+  await clear()
+  await navigateTo('/')
+}
+
 useHead({
   meta: [
     { name: 'viewport', content: 'width=device-width, initial-scale=1' }
@@ -19,10 +26,29 @@ useHead({
         <NuxtLink to="/">
           <AppLogo class="w-auto h-6 shrink-0" />
         </NuxtLink>
-        <TemplateMenu />
       </template>
 
       <template #right>
+        <template v-if="loggedIn">
+          <span class="text-sm text-muted hidden md:inline">{{ user?.username || 'Signed in' }}</span>
+          <UButton
+            label="Logout"
+            color="neutral"
+            variant="ghost"
+            @click="logout"
+          />
+        </template>
+
+        <UButton
+          v-else
+          label="Login with Discord"
+          color="primary"
+          variant="soft"
+          href="/auth/discord"
+          target="_blank"
+          icon="i-simple-icons-discord"
+        />
+
         <UColorModeButton />
       </template>
     </UHeader>

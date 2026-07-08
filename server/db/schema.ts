@@ -13,11 +13,12 @@ export const elections = mysqlTable('election', {
   status: mysqlEnum('status', ['open', 'closed', 'paused']).default('open').notNull(),
   type: mysqlEnum('type', ['congressional', 'presidential', 'parliamentary']).default('congressional').notNull(),
   totalVotes: int(),
+  createdByDiscordId: varchar('created_by_discord_id', { length: 32 }).references(() => user.discordId, { onDelete: 'set null' }),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 })
 
 export const user = mysqlTable('users', {
-  discordId: int('discord_id').notNull().primaryKey(),
+  discordId: varchar('discord_id', { length: 32 }).notNull().primaryKey(),
   role: mysqlEnum('role', ['admin', 'pollbody', 'viewer']).default('pollbody').notNull()
 })
 
@@ -50,12 +51,22 @@ export const electionReturnCandidateStatuses = mysqlTable('election_return_candi
 })
 
 export const relations = defineRelations({
+  user,
   elections,
   congressionalCategories,
   congressionalCandidates,
   electionReturns,
   electionReturnCandidateStatuses
 }, (r) => ({
+  user: {
+    elections: r.many.elections()
+  },
+  elections: {
+    creator: r.one.user({
+      from: r.elections.createdByDiscordId,
+      to: r.user.discordId
+    })
+  },
   congressionalCategories: {
     election: r.one.elections({
       from: r.congressionalCategories.electionId,

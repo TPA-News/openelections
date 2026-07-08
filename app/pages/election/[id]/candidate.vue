@@ -10,6 +10,16 @@
     </div>
 
     <UCard>
+      <UAlert
+        v-if="election && !election.canEdit"
+        color="warning"
+        variant="subtle"
+        icon="i-lucide-lock"
+        title="Read-only election"
+        description="Your account role does not allow adding candidates."
+        class="mb-4"
+      />
+
       <UForm
         :schema="schema"
         :state="state"
@@ -56,11 +66,12 @@
             label="Back"
             color="neutral"
             variant="ghost"
-            @click="navigateTo(`/election/${route.params.id}`)"
+            :to="`/election/${route.params.id}`"
           />
           <UButton
             type="submit"
             :loading="submitting"
+            :disabled="Boolean(election && !election.canEdit)"
             label="Add Candidate"
             icon="i-lucide-plus"
           />
@@ -77,6 +88,7 @@ import type { FormSubmitEvent } from '@nuxt/ui'
 const route = useRoute()
 const toast = useToast()
 const submitting = ref(false)
+const { data: election } = await useFetch<{ canEdit: boolean }>(`/api/elections/${route.params.id}`)
 
 const schema = z.object({
   name: z.string().min(2, 'Name must be at least 2 characters'),
@@ -98,6 +110,16 @@ const state = reactive<Partial<Schema>>({
 })
 
 async function onSubmit(event: FormSubmitEvent<Schema>) {
+  if (election.value && !election.value.canEdit) {
+    toast.add({
+      title: 'Read-only election',
+      description: 'Your account role does not allow adding candidates.',
+      color: 'warning',
+      icon: 'i-lucide-circle-alert'
+    })
+    return
+  }
+
   submitting.value = true
   try {
     await $fetch(`/api/elections/${route.params.id}/candidates`, {

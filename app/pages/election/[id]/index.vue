@@ -19,6 +19,7 @@
 
     <div class="flex flex-wrap gap-2">
       <UButton
+        v-if="election?.canEdit"
         icon="i-lucide-clipboard-check"
         label="New Return"
         color="primary"
@@ -26,7 +27,7 @@
         :to="`/election/${route.params.id}/return`"
       />
       <UButton
-        v-if="election?.type === 'congressional' && election.canSetTotalVotes"
+        v-if="election?.type === 'congressional' && election.canSetTotalVotes && election.canEdit"
         icon="i-lucide-user-plus"
         label="Add Candidate"
         color="neutral"
@@ -34,6 +35,28 @@
         :to="`/election/${route.params.id}/candidate`"
       />
     </div>
+
+    <UAlert
+      v-if="election && !election.canEdit"
+      color="warning"
+      variant="subtle"
+      icon="i-lucide-lock"
+      :title="election.isReadOnly ? 'Election is currently read-only' : 'You do not have edit access'"
+      :description="election.isReadOnly ? 'A pollbody or admin account must claim this election before it can be edited.' : 'Your account role does not allow election edits.'"
+    >
+      <template
+        v-if="election.canClaim"
+        #actions
+      >
+        <UButton
+          label="Claim Election"
+          color="warning"
+          variant="soft"
+          :loading="claimingElection"
+          @click="claimElection"
+        />
+      </template>
+    </UAlert>
 
     <UCard v-if="election" variant="subtle">
       <div class="grid grid-cols-1 gap-4 md:grid-cols-[1fr_auto_auto] md:items-end">
@@ -48,6 +71,7 @@
         </UFormField>
 
         <UButton
+          v-if="election.canEdit"
           label="Save Status"
           icon="i-lucide-save"
           :loading="updatingStatus"
@@ -56,6 +80,7 @@
         />
 
         <UButton
+          v-if="election.canEdit"
           label="Delete Election"
           icon="i-lucide-trash-2"
           color="error"
@@ -110,7 +135,7 @@
           </p>
 
           <div
-            v-if="election.canSetTotalVotes"
+            v-if="election.canSetTotalVotes && election.canEdit"
             class="mt-3 space-y-2"
           >
             <UInput
@@ -140,9 +165,12 @@
           <p class="text-sm text-muted mb-1">
             Votes Counted
           </p>
-          <p class="text-lg font-semibold">
-            {{ formatNumber(election.return?.votesCounted ?? 0) }}
-          </p>
+          <div>
+            <p class="text-lg font-semibold">
+              {{ formatNumber(election.return?.votesCounted ?? 0) }}{{ election.totalVotes === null ? '' : ` / ${formatNumber(election.totalVotes ?? 0)}` }}
+            </p>
+            <p class="text-md">{{ election.totalVotes === null ? '' : `${(election.return?.votesCounted! / election.totalVotes).toFixed(2)}%` }}</p>
+          </div>
           <p class="text-xs text-muted mt-1">
             {{ election.return ? `Reported ${formatDate(election.return.reportedAt)}` : 'No return submitted yet' }}
           </p>
@@ -205,13 +233,13 @@
 
               <div class="flex items-center gap-2">
                 <UBadge
-                  :label="candidate.status"
-                  :color="candidateStatusColor(candidate.status)"
+                  :label="toSentenceCase(candidateStatusLabel(candidate.id))"
+                  :color="candidateStatusColor(candidateStatus(candidate.id))"
                   variant="subtle"
                 />
 
                 <UButton
-                  v-if="election.canSetTotalVotes"
+                  v-if="election.canSetTotalVotes && election.canEdit"
                   icon="i-lucide-trash-2"
                   color="error"
                   variant="ghost"
@@ -237,6 +265,10 @@ type ElectionDetail = {
   type: 'presidential' | 'congressional' | 'parliamentary'
   status: ElectionStatus
   totalVotes: number | null
+  createdByDiscordId: string | null
+  isReadOnly: boolean
+  canEdit: boolean
+  canClaim: boolean
   createdAt: string
   canSetTotalVotes: boolean
   categories: Array<{
@@ -247,6 +279,10 @@ type ElectionDetail = {
     id: number
     votesCounted: number
     reportedAt: string
+    candidateStatuses: Array<{
+      candidateId: number
+      status: CandidateStatus
+    }>
   }
   candidates: Array<{
     id: number
@@ -254,7 +290,6 @@ type ElectionDetail = {
     party: string
     categoryId: number
     categoryName: string
-    status: CandidateStatus
   }>
 }
 
@@ -277,6 +312,7 @@ const updatingStatus = ref(false)
 const settingTotalVotes = ref(false)
 const deletingElection = ref(false)
 const deletingCandidateId = ref<number | null>(null)
+const claimingElection = ref(false)
 
 watchEffect(() => {
   if (election.value) {
@@ -284,6 +320,12 @@ watchEffect(() => {
     totalVotesForm.value = election.value.totalVotes
   }
 })
+
+function toSentenceCase(str: string) {
+  if (!str) return str;
+  return str.charAt(0).toUpperCase() + str.slice(1);
+}
+
 
 const canSetTotalVotes = computed(() => {
   if (!election.value?.canSetTotalVotes) return false
@@ -317,6 +359,11 @@ const candidateGroups = computed(() => {
   return ordered
 })
 
+const latestStatusByCandidateId = computed(() => {
+  const rows = election.value?.return?.candidateStatuses ?? []
+  return Object.fromEntries(rows.map((row) => [row.candidateId, row.status])) as Record<number, CandidateStatus>
+})
+
 function statusColor(status: ElectionStatus): 'success' | 'neutral' | 'warning' {
   if (status === 'open') return 'success'
   if (status === 'paused') return 'warning'
@@ -327,6 +374,17 @@ function candidateStatusColor(status: CandidateStatus): 'success' | 'error' | 'w
   if (status === 'in') return 'success'
   if (status === 'out') return 'error'
   return 'warning'
+}
+
+function candidateStatus(candidateId: number): CandidateStatus {
+  return latestStatusByCandidateId.value[candidateId] ?? 'undecided'
+}
+
+function candidateStatusLabel(candidateId: number) {
+  const status = candidateStatus(candidateId)
+  if (status === 'in') return 'in'
+  if (status === 'out') return 'out'
+  return 'undecided'
 }
 
 function formatNumber(value: number) {
@@ -358,7 +416,7 @@ function normalizeCategory(value: string): 'senate' | 'representative' | 'other'
 }
 
 async function updateStatus() {
-  if (!election.value) return
+  if (!election.value || !election.value.canEdit) return
 
   updatingStatus.value = true
   try {
@@ -385,7 +443,7 @@ async function updateStatus() {
 }
 
 async function setTotalVotes() {
-  if (!election.value || !canSetTotalVotes.value || totalVotesForm.value === null) return
+  if (!election.value || !election.value.canEdit || !canSetTotalVotes.value || totalVotesForm.value === null) return
 
   settingTotalVotes.value = true
   try {
@@ -414,7 +472,7 @@ async function setTotalVotes() {
 }
 
 async function deleteElection() {
-  if (!election.value) return
+  if (!election.value || !election.value.canEdit) return
 
   const confirmed = window.confirm(
     `Delete election \"${election.value.name}\"? This cannot be undone.`
@@ -447,7 +505,7 @@ async function deleteElection() {
 }
 
 async function deleteCandidate(candidateId: number, candidateName: string) {
-  if (!election.value) return
+  if (!election.value || !election.value.canEdit) return
 
   const confirmed = window.confirm(
     `Delete candidate \"${candidateName}\"?`
@@ -476,6 +534,36 @@ async function deleteCandidate(candidateId: number, candidateName: string) {
     })
   } finally {
     deletingCandidateId.value = null
+  }
+}
+
+async function claimElection() {
+  if (!election.value || !election.value.isReadOnly) return
+
+  claimingElection.value = true
+  try {
+    const claimUrl = `/api/elections/${route.params.id}/claim` as string
+
+    await $fetch(claimUrl, {
+      method: 'POST' as any
+    })
+
+    toast.add({
+      title: 'Election claimed',
+      description: 'You can now edit this election.',
+      color: 'success',
+      icon: 'i-lucide-check'
+    })
+
+    await refresh()
+  } catch {
+    toast.add({
+      title: 'Failed to claim election',
+      color: 'error',
+      icon: 'i-lucide-circle-alert'
+    })
+  } finally {
+    claimingElection.value = false
   }
 }
 </script>
