@@ -177,7 +177,7 @@
             <p class="text-lg font-semibold">
               {{ formatNumber(election.return?.votesCounted ?? 0) }}{{ election.totalVotes === null ? '' : ` / ${formatNumber(election.totalVotes ?? 0)}` }}
             </p>
-            <p class="text-md">{{ election.totalVotes === null ? '' : `${(election.return?.votesCounted! / election.totalVotes).toFixed(2)}%` }}</p>
+            <p class="text-md">{{ election.totalVotes === null ? '' : `${((election.return?.votesCounted! / election.totalVotes)*100).toFixed(2)}%` }}</p>
           </div>
           <p class="text-xs text-muted mt-1">
             {{ election.return ? `Reported ${formatDate(election.return.reportedAt)}` : 'No return submitted yet' }}

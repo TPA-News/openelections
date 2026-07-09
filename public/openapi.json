@@ -1,0 +1,82 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "OpenElections Public API",
+    "version": "1.0.0",
+    "description": "Read-only public API for listing elections and returns"
+  },
+  "paths": {
+    "/api/elections": {
+      "get": {
+        "summary": "List elections",
+        "responses": {
+          "200": {
+            "description": "A list of elections",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/ElectionSummary" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/elections/{id}": {
+      "get": {
+        "summary": "Get election",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "responses": {
+          "200": { "description": "Election details", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Election" } } } },
+          "400": { "description": "Invalid id" },
+          "404": { "description": "Not found" }
+        }
+      }
+    },
+    "/api/elections/{id}/returns": {
+      "get": {
+        "summary": "List returns",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } },
+          { "name": "limit", "in": "query", "required": false, "schema": { "type": "integer", "default": 20 } }
+        ],
+        "responses": { "200": { "description": "Returns list", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ReturnList" } } } } }
+      }
+    },
+    "/api/elections/{id}/returns/{returnId}": {
+      "get": {
+        "summary": "Get a single return",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } },
+          { "name": "returnId", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "responses": { "200": { "description": "Return details", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ReturnDetail" } } } } }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ElectionSummary": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "name": { "type": "string" },
+          "type": { "type": "string" },
+          "status": { "type": "string" },
+          "totalVotes": { "type": ["integer", "null"] }
+        }
+      },
+      "Election": {
+        "allOf": [ { "$ref": "#/components/schemas/ElectionSummary" }, { "type": "object", "properties": { "candidates": { "type": "array", "items": { "type": "object" } }, "return": { "type": ["object", "null"] } } } ]
+      },
+      "ReturnList": {
+        "type": "object",
+        "properties": { "electionId": { "type": "integer" }, "count": { "type": "integer" }, "returns": { "type": "array", "items": { "$ref": "#/components/schemas/ReturnSummary" } } }
+      },
+      "ReturnSummary": { "type": "object", "properties": { "id": { "type": "integer" }, "votesCounted": { "type": "integer" } } },
+      "ReturnDetail": { "type": "object", "properties": { "electionId": { "type": "integer" }, "return": { "$ref": "#/components/schemas/ReturnSummary" } } }
+    }
+  }
+}

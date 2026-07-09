@@ -41,6 +41,7 @@ export default defineEventHandler(async (event) => {
       .where(eq(elections.id, electionId))
   }
 
+
   return {
     id: electionId,
     status: body.status
