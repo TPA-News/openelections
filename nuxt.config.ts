@@ -4,15 +4,7 @@ export default defineNuxtConfig({
     '@nuxt/eslint',
     '@nuxt/ui',
     'nuxt-auth-utils',
-    'nuxt-security'
   ],
-
-  security: {
-    corsHandler: {
-      origin: ['*'],
-      methods: ['GET']
-    }
-  },
 
   devtools: {
     enabled: true
@@ -21,7 +13,14 @@ export default defineNuxtConfig({
   css: ['~/assets/css/main.css'],
 
   routeRules: {
-    '/': { prerender: true }
+    '/': { prerender: true },
+    '/api/**': {
+      headers: {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      }
+    }
   },
 
   compatibilityDate: '2025-01-15',
@@ -40,5 +39,9 @@ export default defineNuxtConfig({
         braceStyle: '1tbs'
       }
     }
+  },
+
+  devServer: {
+    cors: {}
   }
 })
