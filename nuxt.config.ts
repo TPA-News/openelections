@@ -3,8 +3,16 @@ export default defineNuxtConfig({
   modules: [
     '@nuxt/eslint',
     '@nuxt/ui',
-    'nuxt-auth-utils'
+    'nuxt-auth-utils',
+    'nuxt-security'
   ],
+
+  security: {
+    corsHandler: {
+      origin: ['*'],
+      methods: ['GET']
+    }
+  },
 
   devtools: {
     enabled: true
